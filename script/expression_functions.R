@@ -33,17 +33,3 @@ rpkmFun <- function(df) {
     select(-cnt) %>%
     pivot_wider(names_from=sample, values_from=rpkm)
 }
-
-
-
-# makePaddedDataFrame ---------------------------------------------------
-
-# the function for making padded dataframe
-na.pad <- function(x,len){
-  x[1:len]
-}
-
-makePaddedDataFrame <- function(l,...){
-  maxlen <- max(sapply(l,length))
-  data.frame(lapply(l,na.pad,len=maxlen),...)
-}

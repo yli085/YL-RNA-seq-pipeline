@@ -35,7 +35,9 @@ print(p2)
 print(p3)
 
 # save files
-file_dir <- "../report/PCA/"
+pca_dir <- "../report/PCA/"
+filenm <- paste0(pca_dir, "PCA", "_12_", intgroup, ".pdf")
+
 ggsave(p1,
-       filename = paste0(file_dir, "PCA", "_12_", intgroup, ".pdf"),
+       filename = filenm,
        height = 7, width = 7,units = "in")

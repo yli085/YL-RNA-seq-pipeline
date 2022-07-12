@@ -17,17 +17,17 @@ dds <- DESeqDataSetFromMatrix(countData = data, colData = meta, design = ~sample
 vsd <- vst(dds)
 
 ## use the PCA functions
-# function input
-object=vsd
-intgroup="sampletype"
-PC_1=1
-PC_2=2
-ntop=500
-PCA_label <- meta$PCA_label
+# function input:
+# object=vsd
+# intgroup="sampletype"
+# PC_1=1
+# PC_2=2
+# ntop=500
+# PCA_label <- meta$PCA_label
 
 # check the plots
 p1 <- PCAdotlab(object=vsd, intgroup="sampletype", PC_1=1, PC_2=2, ntop=500, PCA_label=PCA_label)
-p2 <- PCAdot(object=vsd, intgroup="sampletype", PC_1=1, PC_2=2, ntop=500, PCA_label=PCA_label)
+p2 <- PCAdot(object=vsd, intgroup="sampletype", PC_1=1, PC_2=2, ntop=500)
 p3 <- PCAlab(object=vsd, intgroup="sampletype", PC_1=1, PC_2=2, ntop=500, PCA_label=PCA_label)
 
 print(p1)

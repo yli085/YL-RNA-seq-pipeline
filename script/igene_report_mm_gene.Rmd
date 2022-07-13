@@ -1,0 +1,190 @@
+
+---
+title: "Target gene expression level report"
+author: "Yahui Li"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::pdf_document
+
+---
+  
+```{r usage and library setup, include=FALSE}
+## usage:
+# this R markdown is to visualize the target genes' expression levels, it shows the statistics and barplot for each gene.
+# input are: 
+# An excel file with mouse gene symbol or id column.
+# Text description at the beginning of the R markdown
+# DE analysis output "gene_ls" with comparison groups selected
+# logCPM table
+# group info of samples (for barplot group name, best if from the meta data)
+# gene annotation file. 
+
+# output are:
+# 1. summary result tables having mouse gene name, gene description, and limma output. One comparison group per summary table.
+# 2. the expression level box plots with pval and adj.pval for all comparison groups
+# the output pdf will be saved in the same folder as this script.
+# Note: can't format the digit correctly in the individual stat table.
+
+## set up global environment and libraries
+knitr::opts_chunk$set(echo = FALSE, message=FALSE)
+library(tidyverse)
+library(readxl)
+
+```
+
+```{r input}
+## one-column mouse gene symbol/id table (default: gene symbol)
+igenes_df <- read_excel("../report/report_wo_aging/overlapping_analysis/venn_diagram/AvsC&BvsC&CvsWT_overlapping_genes_w_direction.xlsx")
+igenes_df <- igenes_df[,2]
+
+# change the column name to "Gene_mm"
+names(igenes_df) <- c("Gene_mm")
+# get the igenes vector
+igenes <- igenes_df[[1]]
+
+# gene id annotation table
+gene_id_df <- readRDS("/Users/YL/Documents/Nutstore/Nutstore/TB_NGS/RNAseq_method/genome_annotations/ensembl_ids_conversion.RDS")
+
+# now, if it is gene id, do the id to symbol conversion
+if (grepl("ENSMUSG", igenes[1]) == TRUE) {
+  gene_id_df[match(igenes, gene_id_df$gene_id), "gene_name"] -> igenes_df$Gene_mm
+  igenes <- igenes_df$Gene_mm
+}
+
+## p.value from DE analysis
+gene_ls <- readRDS("../report/report_wo_aging/DE_analysis/DE_sum/gene_ls.RDS")
+comparisons <- names(gene_ls)
+# comparisons
+
+## logCPM from the DE analysis
+lcpm_df <- read.table("../report/report_wo_aging/gene_expression/logCPM.txt", header=T, stringsAsFactors = F)
+
+## get the sample group info
+meta <- read_excel("../data/meta/meta.xlsx")
+Group <- meta$Group0[1:19]
+
+```
+Project: Neuro-007-Brain \
+Comparisons: \
+1. A vs C \
+2. B vs C \
+3. C vs WT (WT_AG only) \
+
+
+```{r print the summary table for the target gene list, results = 'asis'}
+
+for (i in seq_along(comparisons)){
+  
+  df <- gene_ls[[i]]
+  # now add gene's annotations
+  df <- df %>% full_join(gene_id_df, by=c('gene' ='gene_id'))
+  # stat is the holder for statistics data for each comparison group
+  stat <- igenes_df %>%
+    dplyr::left_join(df, by=c("Gene_mm" = "gene_name")) %>% 
+    dplyr::select('Gene_mm', 'entrez_description', 'AveExpr', 'logFC', 'P.Value',	'adj.P.Val') %>% 
+    rename(Description=entrez_description, log2FC=logFC)
+  
+  # print table
+  row.names(stat) <- NULL
+  # stat <- stat %>% mutate(No = seq_along(igenes)) %>% relocate(No) # add No.
+  print(knitr::kable(stat, digits=c(0,0,2,2,4,4), caption=paste0('Result table (', comparisons[i], ')')))
+  cat("\n")
+}
+
+```
+
+AveExpr: Average expression level (logCPM) across all samples, log2FC: log2 Fold Change, adj.P.Val: adjusted p-value. NA: Lowly expressed or not expressed.
+
+\newpage
+
+
+```{r igenes lcpm}
+# add gene name and description to the expression matrix
+lcpm_df <- lcpm_df %>% left_join(gene_id_df, by=c("gene"="gene_id"))
+
+# get igenes' lcpm table
+igenes_lcpm_df <- lcpm_df[match(igenes, lcpm_df$gene_name), ]
+igenes_lcpm_df <- igenes_lcpm_df %>% 
+  select(-c("gene", "ensembl_id", "mgi_id", "entrez_id", "entrez_description")) %>% 
+  relocate(gene_name) %>% 
+  rename(Gene=gene_name)
+
+```
+
+
+```{r individual gene pval list}
+
+# get the gene id vector
+igenes_ids <- gene_id_df[match(igenes, gene_id_df$gene_name), "gene_id"]
+# create an empty vector to store all igenes' statistics tables
+pval_ls <- vector("list", length(igenes))
+names(pval_ls) <- igenes
+
+# initial gene differential statistics
+pval_df <- data.frame(Comparison = comparisons, 
+                      logFC = rep("NA", length(comparisons)),
+                      Pval = rep("NA", length(comparisons)),
+                      adjPval= rep("NA", length(comparisons)))
+
+# for each gene, rewrite the stat table when there are data
+for (i in seq_along(igenes)) {
+  
+  # default: initial table
+  pval_ls[[i]] <- pval_df
+  
+  # if the igene is expressed (has the differential data), then rewrite the data
+  if (igenes_ids[i] %in% gene_ls[[1]]$gene) {
+    
+    for (j in seq_along(comparisons)) {
+      pval_ls[[i]][j, 2:4] <- gene_ls[[j]] %>% 
+        subset(gene==igenes_ids[i], select=c(logFC, P.Value, adj.P.Val))
+    }
+  }
+}
+
+```
+
+
+```{r individual box plots and pvalue tables, results = 'asis'}
+
+for (i in seq_along(igenes)) {
+  
+  df <- igenes_lcpm_df[i,]
+  
+  # plot
+  df <- df %>% pivot_longer(2:ncol(df), names_to = "Sample", values_to = "lcpm")
+  df <- df %>% mutate(Group=Group)
+  df$Group <- as_factor(df$Group) 
+  df$Gene <- as_factor(df$Gene)
+  
+  # check lcpm range
+  # summary(df$lcpm)
+  lcpm_min = floor(min(df$lcpm))
+  lcpm_max = ceiling(max(df$lcpm))
+  ylimits = c(lcpm_min-1, lcpm_max+1)
+  ybreaks = seq(lcpm_min-1, lcpm_max+1, by=2)
+  
+  
+  p1 <- ggplot(df, aes(x=Group, y=lcpm))+
+    geom_boxplot(aes(fill=Group))+
+    geom_jitter(size=1, width=0.1)+
+    scale_y_continuous(limits=ylimits, breaks = ybreaks)+
+    labs(y=expression('Expression Level (Log'[2]*'CPM)')) +
+    theme(axis.text = element_text(color = "black"),
+          axis.title.x=element_blank(),
+          axis.title.y = element_text(size =12, face="bold"),
+          axis.text.x = element_text(size =12, angle = 45, face="bold", vjust = 1, hjust = 1),
+          plot.title = element_text(hjust = 0.5, face = "bold"),
+          legend.position = "none")+
+    facet_wrap(vars(Gene),ncol=1)+
+    theme(strip.text.x = element_text(size = 16))
+  print(p1)
+  cat("\n")
+  
+  ## p-value table
+  row.names(pval_ls[[i]]) <- NULL
+  print(knitr::kable(pval_ls[[i]], digits=c(0,2,4,4), caption=paste0(igenes[i], ": differential expression statistics")))
+  cat("\n")
+}
+
+```
